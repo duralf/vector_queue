@@ -26,7 +26,7 @@ SOFTWARE.
 #include <memory>
 #include <iterator>
 
-template <class T>
+template <class T, class Allocator = std::allocator<T>>
 class vector_queue
 {
 	static constexpr size_t inital_capacity = 4;
@@ -42,6 +42,8 @@ class vector_queue
 	size_t _size;
 	size_t _capacity;
 	size_t start;
+	[[no_unique_address]] Allocator alloc;
+
 
 
 	template <class V>
@@ -83,9 +85,16 @@ class vector_queue
 			return index != other.index;
 		}
 
+		bool operator==(const iter_templ<V>& other) const = default;
+
 		ptrdiff_t operator-(const iter_templ<V>& other)
 		{
 			return ptrdiff_t(index - other.index);
+		}
+
+		std::strong_ordering operator<=>(const iter_templ& other) const
+		{
+			return index <=> other.index;
 		}
 
 		iter_templ(size_t index, vector_queue<T>& container) : index(index), container(&container) {}
@@ -97,11 +106,11 @@ class vector_queue
 public:
 	using iterator = iter_templ<T>;
 	using const_iterator = iter_templ<const T>;
-
-	vector_queue() : array{}, _size{}, _capacity{}, start{}
+	constexpr vector_queue() noexcept(noexcept(Allocator())) : array{}, _size{}, _capacity{}, start{}, alloc{}
 	{}
-
-	vector_queue(std::initializer_list<T> values) : _size{}, _capacity(values.size()), start{}
+	constexpr explicit vector_queue(const Allocator& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{alloc}
+	{}
+	vector_queue(std::initializer_list<T> values, const Allocator& alloc = Allocator()) : _size{}, _capacity(values.size()), start{}, alloc(alloc)
 	{
 		array = new array_type[values.size()];
 		for(auto& val: values)
@@ -110,20 +119,51 @@ public:
 		}
 	}
 
-	vector_queue(vector_queue<T>&& other) noexcept : array(other.array), _size(other._size), _capacity(other._capacity), start(other.start)
+	vector_queue(vector_queue<T>&& other) noexcept : array(other.array), _size(other._size), _capacity(other._capacity), start(other.start), alloc(std::move(other.alloc))
 	{
 		other._size = 0;
 		other.array = nullptr;
 		other._capacity = 0;
 	}
 
-	vector_queue(const vector_queue<T>& other) : _capacity(other._capacity), _size{}, start{}
+	vector_queue(const vector_queue<T>& other) : _capacity(other._size), _size{}, start{}, alloc(other.alloc)
 	{
 		array = new array_type[_capacity];
 		for (auto& val : other)
 		{
 			std::construct_at(&array[_size++].value, val);
 		}
+	}
+
+	vector_queue<T, Allocator>& operator=(vector_queue<T, Allocator>&& other) noexcept
+	{
+		if (this == &other)
+			return *this;
+
+		array = other.array;
+		_size = other.size();
+		_capacity = other.capacity();
+		start = other.start;
+		alloc = std::move(other.alloc);
+		other._size = 0;
+		other.array = nullptr;
+		other._capacity = 0;
+		return *this;
+	}
+
+	vector_queue<T, Allocator>& operator=(const vector_queue<T, Allocator>& other)
+	{
+		if (this == &other)
+			return *this;
+
+		clear();
+		if (capacity() < other.size())
+			realloc(other.size());
+		for (auto& val : other)
+		{
+			std::construct_at(&array[_size++].value, val);
+		}
+		return *this;
 	}
 
 	iterator begin() { return { 0, *this }; }
