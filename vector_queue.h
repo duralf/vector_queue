@@ -26,7 +26,7 @@ SOFTWARE.
 #include <memory>
 #include <iterator>
 
-template <class T, class Allocator = std::allocator<T>>
+template <class T, class Alloc = std::allocator<T>>
 class vector_queue
 {
 	static constexpr size_t inital_capacity = 4;
@@ -38,11 +38,13 @@ class vector_queue
 		array_type() : dummy{} {}
 		~array_type() {}
 	};
+	using allocator_traits = std::allocator_traits<Alloc>;
+	using allocator = typename allocator_traits::template rebind_alloc<array_type>;
 	array_type* array;
 	size_t _size;
 	size_t _capacity;
 	size_t start;
-	[[no_unique_address]] Allocator alloc;
+	[[no_unique_address]] allocator alloc;
 
 
 
@@ -106,13 +108,13 @@ class vector_queue
 public:
 	using iterator = iter_templ<T>;
 	using const_iterator = iter_templ<const T>;
-	constexpr vector_queue() noexcept(noexcept(Allocator())) : array{}, _size{}, _capacity{}, start{}, alloc{}
+	constexpr vector_queue() noexcept(noexcept(allocator())) : array{}, _size{}, _capacity{}, start{}, alloc{}
 	{}
-	constexpr explicit vector_queue(const Allocator& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{alloc}
+	constexpr explicit vector_queue(const allocator& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{alloc}
 	{}
-	vector_queue(std::initializer_list<T> values, const Allocator& alloc = Allocator()) : _size{}, _capacity(values.size()), start{}, alloc(alloc)
+	vector_queue(std::initializer_list<T> values, const allocator& alloc = allocator()) : _size{}, _capacity(values.size()), start{}, alloc(alloc)
 	{
-		array = new array_type[values.size()];
+		array = this->alloc.allocate(values.size());
 		for(auto& val: values)
 		{
 			std::construct_at(&array[_size++].value, val);
@@ -128,14 +130,14 @@ public:
 
 	vector_queue(const vector_queue<T>& other) : _capacity(other._size), _size{}, start{}, alloc(other.alloc)
 	{
-		array = new array_type[_capacity];
+		array = alloc.allocate(capacity());
 		for (auto& val : other)
 		{
 			std::construct_at(&array[_size++].value, val);
 		}
 	}
 
-	vector_queue<T, Allocator>& operator=(vector_queue<T, Allocator>&& other) noexcept
+	vector_queue<T, Alloc>& operator=(vector_queue<T, Alloc>&& other) noexcept
 	{
 		if (this == &other)
 			return *this;
@@ -151,7 +153,7 @@ public:
 		return *this;
 	}
 
-	vector_queue<T, Allocator>& operator=(const vector_queue<T, Allocator>& other)
+	vector_queue<T, Alloc>& operator=(const vector_queue<T, Alloc>& other)
 	{
 		if (this == &other)
 			return *this;
@@ -175,9 +177,9 @@ public:
 
 	T& operator[](size_t index)
 	{
-		if (start + index < _capacity)
+		if (start + index < capacity())
 			return array[start + index].value;
-		return array[start + index - _capacity].value;
+		return array[start + index - capacity()].value;
 	}
 
 	template <class... Args, class = std::enable_if_t<std::is_constructible_v<T, Args...>>>
@@ -205,7 +207,7 @@ public:
 
 	void clear()
 	{
-		for_each_index(begin(), end(), [this](size_t ix)
+		for_each_index([this](size_t ix)
 			{
 				std::destroy_at(&array[ix].value);
 			});
@@ -223,7 +225,7 @@ public:
 	{
 		std::destroy_at(&(*this)[0]);
 		start++;
-		if (start == _capacity)
+		if (start == capacity())
 			start = 0;
 		--_size;
 	}
@@ -252,7 +254,7 @@ public:
 	template <class V>
 	void erase(iter_templ<V> pos)
 	{
-		if(pos - begin() < ptrdiff_t(_size / 2))
+		if(pos - begin() < ptrdiff_t(size() / 2))
 		{
 			std::destroy_at(&*pos);
 			while (pos != begin())
@@ -278,11 +280,20 @@ public:
 		--_size;
 	}
 
+	void swap(vector_queue<T,Alloc>& other) noexcept(std::allocator_traits<Alloc>::propagate_on_container_swap::value
+		|| std::allocator_traits<Alloc>::is_always_equal::value)
+	{
+		std::swap(array, other.array);
+		std::swap(start, other.start);
+		std::swap(_capacity, other._capacity);
+		std::swap(_size, other._size);
+		std::swap(alloc, other.alloc);
+	}
 private:
 
 	T* alloc_back()
 	{
-		if (_size == _capacity) {
+		if (size() == capacity()) {
 			grow();
 			return &array[_size++].value;
 		}
@@ -295,16 +306,16 @@ private:
 	T* alloc_front()
 	{
 
-		if (_size == _capacity) {
+		if (size() == capacity()) {
 			grow();
-			start = _capacity - 1; // wrap around
+			start = capacity() - 1; // wrap around
 			++_size;
 			return &array[start].value;
 		}
 		else
 		{
 			if (start == 0)
-				start = _capacity;
+				start = capacity();
 			++_size;
 			return &array[--start].value;
 		}
@@ -312,32 +323,31 @@ private:
 
 	void realloc(size_t new_capacity)
 	{
-		auto tmp = std::make_unique<array_type[]>(new_capacity);
+		auto tmp = vector_queue<T, Alloc>{};
+		tmp.reserve(new_capacity);
 		size_t new_index = 0;;
 		for_each_index([this, &tmp, &new_index](size_t ix)
 			{
-				std::construct_at(&tmp.get()[new_index++].value, std::move(array[ix].value));
+				std::construct_at(&tmp.array[new_index++].value, std::move(array[ix].value));
 				std::destroy_at(&array[ix].value);
 			});
-		delete[] array;
-		array = tmp.release();
-		start = 0;
-		_capacity = new_capacity;
+		alloc.deallocate(array, capacity());
+		swap(tmp);
 	}
 
 	template <class Func>
 	void for_each_index(Func&& f)
 	{
-		if (start + _size > _capacity) {// wrapping
-			for (size_t i = start; i < _capacity; ++i)
+		if (start + size() > capacity()) {// wrapping
+			for (size_t i = start; i < capacity(); ++i)
 				f(i);
-			auto end = start + _size - _capacity;
+			auto end = start + size() - capacity();
 			for (size_t i = 0; i < end; ++i)
 				f(i);
 		}
 		else
 		{
-			auto end = start + _size;
+			auto end = start + size();
 			for (size_t i = start; i < end; ++i)
 				f(i);
 		}
@@ -345,14 +355,14 @@ private:
 
 	void grow()
 	{
-		if(_capacity == 0)
+		if(capacity() == 0)
 		{
-			array = new array_type[inital_capacity];
+			array = alloc.allocate(inital_capacity);
 			_capacity = inital_capacity;
 		}
 		else
 		{
-			realloc(_capacity + (_capacity >> 1));
+			realloc(capacity() + (capacity() >> 1));
 		}
 	}
 };
