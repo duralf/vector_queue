@@ -48,7 +48,7 @@ class vector_queue
 
 
 
-	template <class V>
+	template <class V, class Deque>
 	struct iter_templ
 	{
 		typedef ptrdiff_t difference_type;
@@ -60,38 +60,56 @@ class vector_queue
 		V& operator*() { return (*container)[index]; }
 		V* operator->() { return &(*container)[index]; }
 
-		iter_templ<V>& operator++()
+		iter_templ<V, Deque>& operator++()
 		{
 			++index;
 			return *this;
 		}
 
-		iter_templ<V> operator++(int)
+		iter_templ<V, Deque> operator++(int)
 		{
 			return {index++, *container};
 		}
 
-		iter_templ<V>& operator--()
+		iter_templ<V, Deque>& operator--()
 		{
 			--index;
 			return *this;
 		}
 
-		iter_templ<V> operator--(int)
+		iter_templ<V, Deque> operator--(int)
 		{
 			return { index--, *container };
 		}
 
-		bool operator!=(const iter_templ<V>& other) const
+		bool operator!=(const iter_templ<V, Deque>& other) const
 		{
 			return index != other.index;
 		}
 
-		bool operator==(const iter_templ<V>& other) const = default;
+		bool operator==(const iter_templ<V, Deque>& other) const = default;
 
-		ptrdiff_t operator-(const iter_templ<V>& other)
+		ptrdiff_t operator-(const iter_templ<V, Deque>& other) const
 		{
 			return ptrdiff_t(index - other.index);
+		}
+
+		iter_templ<V, Deque>& operator+=(ptrdiff_t diff)
+		{
+			index += diff;
+			return *this;
+		}
+
+		iter_templ<V, Deque>& operator-=(ptrdiff_t diff)
+		{
+			index -= diff;
+			return *this;
+		}
+
+		iter_templ<V, Deque> operator+(ptrdiff_t diff) const
+		{
+			auto tmp = *this;
+			return tmp += diff;
 		}
 
 		std::strong_ordering operator<=>(const iter_templ& other) const
@@ -99,15 +117,15 @@ class vector_queue
 			return index <=> other.index;
 		}
 
-		iter_templ(size_t index, vector_queue<T>& container) : index(index), container(&container) {}
+		iter_templ(size_t index, Deque& container) : index(index), container(&container) {}
 	private:
 		size_t index;
-		vector_queue<T>* container;
+		Deque* container;
 	};
 
 public:
-	using iterator = iter_templ<T>;
-	using const_iterator = iter_templ<const T>;
+	using iterator = iter_templ<T, vector_queue<T>>;
+	using const_iterator = iter_templ<const T, const vector_queue<T>>;
 	constexpr vector_queue() noexcept(noexcept(allocator())) : array{}, _size{}, _capacity{}, start{}, alloc{}
 	{}
 	constexpr explicit vector_queue(const allocator& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{alloc}
@@ -182,6 +200,14 @@ public:
 		return array[start + index - capacity()].value;
 	}
 
+	const T& operator[](size_t index) const
+	{
+		if (start + index < capacity())
+			return array[start + index].value;
+		return array[start + index - capacity()].value;
+	}
+
+
 	template <class... Args, class = std::enable_if_t<std::is_constructible_v<T, Args...>>>
 	void emplace_back(Args&&... args)
 	{
@@ -251,33 +277,50 @@ public:
 		return _capacity;
 	}
 
-	template <class V>
-	void erase(iter_templ<V> pos)
+	template <class V, class Deque>
+	void erase(iter_templ<V, Deque> first, iter_templ<V, Deque> last)
 	{
-		if(pos - begin() < ptrdiff_t(size() / 2))
+		auto n = last - first;
+		if (n == size()) {
+			clear();
+			return;
+		}
+		if(end() - last <= ptrdiff_t(size() / 2))
 		{
-			std::destroy_at(&*pos);
-			while (pos != begin())
+			while (first + n < end())
 			{
-				auto prev = --iter_templ<V>(pos);
-				*pos = std::move(*prev);
-				pos = prev;
+				*first = std::move(*(first + n));
+				++first;
 			} 
-			if (++start == capacity())
-				start = 0;
+			while(n > 0)
+			{
+				pop_back();
+				--n;
+			}
 		}
 		else
 		{
-			std::destroy_at(&*pos);
-			auto last = --end();
-			while (pos != last)
+			if(first != begin())
 			{
-				auto next = ++iter_templ<V>(pos);
-				*pos = std::move(*next);
-				pos = next;
+				do
+				{
+					--first;
+					*(first + n) = std::move(*first);
+				} while (first != begin());
+			}
+			while (n > 0)
+			{
+				pop_front();
+				--n;
 			}
 		}
-		--_size;
+	}
+
+
+	template <class V, class Deque>
+	void erase(iter_templ<V, Deque> pos)
+	{
+		erase(pos, pos + 1);
 	}
 
 	void swap(vector_queue<T,Alloc>& other) noexcept(std::allocator_traits<Alloc>::propagate_on_container_swap::value
@@ -324,11 +367,11 @@ private:
 	void realloc(size_t new_capacity)
 	{
 		auto tmp = vector_queue<T, Alloc>{};
-		tmp.reserve(new_capacity);
-		size_t new_index = 0;;
-		for_each_index([this, &tmp, &new_index](size_t ix)
+		tmp.array = this->alloc.allocate(new_capacity);
+		tmp._capacity = new_capacity;
+		for_each_index([this, &tmp](size_t ix)
 			{
-				std::construct_at(&tmp.array[new_index++].value, std::move(array[ix].value));
+				std::construct_at(&tmp.array[tmp._size++].value, std::move(array[ix].value));
 				std::destroy_at(&array[ix].value);
 			});
 		alloc.deallocate(array, capacity());
