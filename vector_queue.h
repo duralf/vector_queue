@@ -39,12 +39,15 @@ class vector_queue
 		~array_type() {}
 	};
 	using allocator_traits = std::allocator_traits<Alloc>;
-	using allocator = typename allocator_traits::template rebind_alloc<array_type>;
+public:
+	using allocator_type = typename allocator_traits::template rebind_alloc<array_type>;
+
+private:
 	array_type* array;
 	size_t _size;
 	size_t _capacity;
 	size_t start;
-	[[no_unique_address]] allocator alloc;
+	[[no_unique_address]] allocator_type alloc;
 
 
 
@@ -124,13 +127,20 @@ class vector_queue
 	};
 
 public:
+	using value_type = T;
+	using reference = T&;
+	using const_reference = const T&;
 	using iterator = iter_templ<T, vector_queue<T>>;
 	using const_iterator = iter_templ<const T, const vector_queue<T>>;
-	constexpr vector_queue() noexcept(noexcept(allocator())) : array{}, _size{}, _capacity{}, start{}, alloc{}
+	using reverse_iterator = std::reverse_iterator<iterator>;
+	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+	using difference_type = ptrdiff_t;
+
+	constexpr vector_queue() noexcept(noexcept(allocator_type())) : array{}, _size{}, _capacity{}, start{}, alloc{}
 	{}
-	constexpr explicit vector_queue(const allocator& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{alloc}
+	constexpr explicit vector_queue(const allocator_type& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{alloc}
 	{}
-	vector_queue(std::initializer_list<T> values, const allocator& alloc = allocator()) : _size{}, _capacity(values.size()), start{}, alloc(alloc)
+	vector_queue(std::initializer_list<T> values, const allocator_type& alloc = allocator_type()) : _size{}, _capacity(values.size()), start{}, alloc(alloc)
 	{
 		array = this->alloc.allocate(values.size());
 		for(auto& val: values)
@@ -192,6 +202,31 @@ public:
 	const_iterator end() const { return { _size, *this }; }
 	const_iterator cbegin() const { return { 0, *this }; }
 	const_iterator cend() const { return { _size, *this }; }
+
+	constexpr bool empty() const
+	{
+		return size() == 0;
+	}
+
+	T& front()
+	{
+		return (*this)[0];
+	}
+
+	const T& front() const
+	{
+		return (*this)[0];
+	}
+
+	T& back()
+	{
+		return (*this)[size() - 1];
+	}
+
+	const T& back() const
+	{
+		return (*this)[size() - 1];
+	}
 
 	T& operator[](size_t index)
 	{
@@ -267,12 +302,12 @@ public:
 		realloc(_size);
 	}
 
-	size_t size() const
+	constexpr size_t size() const
 	{
 		return _size;
 	}
 
-	size_t capacity() const
+	constexpr size_t capacity() const
 	{
 		return _capacity;
 	}
