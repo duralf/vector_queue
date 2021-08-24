@@ -25,6 +25,7 @@ SOFTWARE.
 #include <type_traits>
 #include <memory>
 #include <iterator>
+#include <algorithm>
 
 template <class T, class Alloc = std::allocator<T>>
 class vector_queue
@@ -51,7 +52,7 @@ private:
 
 
 
-	template <class V, class Deque>
+	template <class V>
 	struct iter_templ
 	{
 		typedef ptrdiff_t difference_type;
@@ -59,57 +60,58 @@ private:
 		typedef V* pointer;
 		typedef V& reference;
 		typedef std::random_access_iterator_tag iterator_category;
+		using container_type = std::conditional_t<std::is_const_v<V>, const vector_queue<T>, vector_queue<T>>;
 
 		V& operator*() { return (*container)[index]; }
 		V* operator->() { return &(*container)[index]; }
 
-		iter_templ<V, Deque>& operator++()
+		iter_templ<V>& operator++()
 		{
 			++index;
 			return *this;
 		}
 
-		iter_templ<V, Deque> operator++(int)
+		iter_templ<V> operator++(int)
 		{
 			return {index++, *container};
 		}
 
-		iter_templ<V, Deque>& operator--()
+		iter_templ<V>& operator--()
 		{
 			--index;
 			return *this;
 		}
 
-		iter_templ<V, Deque> operator--(int)
+		iter_templ<V> operator--(int)
 		{
 			return { index--, *container };
 		}
 
-		bool operator!=(const iter_templ<V, Deque>& other) const
+		bool operator!=(const iter_templ<V>& other) const
 		{
 			return index != other.index;
 		}
 
-		bool operator==(const iter_templ<V, Deque>& other) const = default;
+		bool operator==(const iter_templ<V>& other) const = default;
 
-		ptrdiff_t operator-(const iter_templ<V, Deque>& other) const
+		ptrdiff_t operator-(const iter_templ<V>& other) const
 		{
 			return ptrdiff_t(index - other.index);
 		}
 
-		iter_templ<V, Deque>& operator+=(ptrdiff_t diff)
+		iter_templ<V>& operator+=(ptrdiff_t diff)
 		{
 			index += diff;
 			return *this;
 		}
 
-		iter_templ<V, Deque>& operator-=(ptrdiff_t diff)
+		iter_templ<V>& operator-=(ptrdiff_t diff)
 		{
 			index -= diff;
 			return *this;
 		}
 
-		iter_templ<V, Deque> operator+(ptrdiff_t diff) const
+		iter_templ<V> operator+(ptrdiff_t diff) const
 		{
 			auto tmp = *this;
 			return tmp += diff;
@@ -120,18 +122,18 @@ private:
 			return index <=> other.index;
 		}
 
-		iter_templ(size_t index, Deque& container) : index(index), container(&container) {}
+		iter_templ(size_t index, container_type& container) : index(index), container(&container) {}
 	private:
 		size_t index;
-		Deque* container;
+		container_type* container;
 	};
 
 public:
 	using value_type = T;
 	using reference = T&;
 	using const_reference = const T&;
-	using iterator = iter_templ<T, vector_queue<T>>;
-	using const_iterator = iter_templ<const T, const vector_queue<T>>;
+	using iterator = iter_templ<T>;
+	using const_iterator = iter_templ<const T>;
 	using reverse_iterator = std::reverse_iterator<iterator>;
 	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 	using difference_type = ptrdiff_t;
@@ -312,8 +314,8 @@ public:
 		return _capacity;
 	}
 
-	template <class V, class Deque>
-	void erase(iter_templ<V, Deque> first, iter_templ<V, Deque> last)
+	template <class V>
+	void erase(iter_templ<V> first, iter_templ<V> last)
 	{
 		auto n = last - first;
 		if (n == size()) {
@@ -352,8 +354,8 @@ public:
 	}
 
 
-	template <class V, class Deque>
-	void erase(iter_templ<V, Deque> pos)
+	template <class V>
+	void erase(iter_templ<V> pos)
 	{
 		erase(pos, pos + 1);
 	}
