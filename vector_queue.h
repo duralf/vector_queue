@@ -30,7 +30,7 @@ SOFTWARE.
 template <class T, class Alloc = std::allocator<T>>
 class vector_queue
 {
-	static constexpr size_t inital_capacity = 4;
+	static constexpr size_t inital_capacity = std::max(size_t(4), size_t(16/sizeof(T))); // no point in allocating tiny areas
 	struct dummy_value {};
 	union array_type
 	{
@@ -433,6 +433,17 @@ private:
 		}
 	}
 
+	size_t next_capacity() const
+	{
+		auto new_capacity = _capacity + (_capacity >> 1);
+		// round up to nearest 16 bytes
+		if constexpr (sizeof(T) < 16 && 16 / sizeof(T) > 1) {
+			new_capacity = new_capacity + 15 / sizeof(T);
+			new_capacity = new_capacity & ~(16 / sizeof(T) - 1);
+		}
+		return new_capacity;
+	}
+
 	void grow()
 	{
 		if(capacity() == 0)
@@ -442,7 +453,7 @@ private:
 		}
 		else
 		{
-			realloc(capacity() + (capacity() >> 1));
+			realloc(next_capacity());
 		}
 	}
 };
