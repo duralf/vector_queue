@@ -28,9 +28,9 @@ SOFTWARE.
 #include <algorithm>
 
 template <class T, class Alloc = std::allocator<T>>
-class vector_queue
+struct vector_queue
 {
-	static constexpr size_t inital_capacity = std::max(size_t(4), size_t(16/sizeof(T))); // no point in allocating tiny areas
+private:
 	struct dummy_value {};
 	union array_type
 	{
@@ -39,11 +39,12 @@ class vector_queue
 		array_type() : dummy{} {}
 		~array_type() {}
 	};
-	using allocator_traits = std::allocator_traits<Alloc>;
 public:
-	using allocator_type = typename allocator_traits::template rebind_alloc<array_type>;
+	using allocator_type = typename std::allocator_traits<Alloc>::template rebind_alloc<array_type>;
 
 private:
+	static constexpr size_t smallest_alloc = sizeof(size_t) * 4; // no point in allocating tiny areas
+	static constexpr size_t initial_capacity = std::max(size_t(4), smallest_alloc / sizeof(T));
 	array_type* array;
 	size_t _size;
 	size_t _capacity;
@@ -51,6 +52,64 @@ private:
 	[[no_unique_address]] allocator_type alloc;
 
 
+	template <class... Args>
+	void emplace_front_no_grow(Args&&... args)
+	{
+		if (start == 0) {
+			std::construct_at(&array[capacity() - 1].value, std::forward<Args>(args)...); // wrap around
+			start = capacity();
+		}
+		else
+			std::construct_at(&array[start - 1].value, std::forward<Args>(args)...);
+		--start;
+		++_size;
+	}
+
+
+	template <class... Args>
+	void emplace_back_no_grow(Args&&... args)
+	{
+		std::construct_at(&(*this)[_size], std::forward<Args>(args)...);
+		++_size;
+	}
+
+	template <class Iter>
+	void insert_n_front(size_t n, Iter first)
+	{
+		for(size_t i = 0; i < n; ++i)
+		{
+#ifndef VECTOR_QUEUE_NO_EXCEPTIONS
+			try {
+#endif
+				size_t index;
+				if (start + i < n)
+					index = start + capacity() - n + i;
+				else
+					index = start - n + 1;
+				std::construct_at(&array[index].value, *first);
+				++first;
+#ifndef VECTOR_QUEUE_NO_EXCEPTIONS
+			} catch (...)
+			{
+				for (size_t j = 0; j < i; ++j)
+				{
+					size_t index;
+					if (start + j < i)
+						index = start + capacity() - i + j;
+					else
+						index = start - i + 1;
+					std::destroy_at(&array[index].value);
+				}
+				throw;
+			}
+#endif
+		}
+		_size += n;
+		if (start < n)
+			start = capacity() - start - n;
+		else
+			start -= n;
+	}
 
 	template <class V>
 	struct iter_templ
@@ -117,10 +176,23 @@ private:
 			return tmp += diff;
 		}
 
+		iter_templ<V> operator-(ptrdiff_t diff) const
+		{
+			auto tmp = *this;
+			return tmp -= diff;
+		}
+
 		std::strong_ordering operator<=>(const iter_templ& other) const
 		{
 			return index <=> other.index;
 		}
+
+		//template <class = std::enable_if_t<!std::is_const_v<V>>>
+		operator iter_templ<const T>() const
+		{
+			return { index, *container };
+		}
+
 
 		iter_templ(size_t index, container_type& container) : index(index), container(&container) {}
 	private:
@@ -204,6 +276,10 @@ public:
 	const_iterator end() const { return { _size, *this }; }
 	const_iterator cbegin() const { return { 0, *this }; }
 	const_iterator cend() const { return { _size, *this }; }
+	reverse_iterator rbegin() { return reverse_iterator{ iterator{ _size, *this} }; }
+	reverse_iterator rend() { return reverse_iterator{ iterator{ 0, *this} }; }
+	const_reverse_iterator crbegin() const { return const_reverse_iterator{ const_iterator{ _size, *this} }; }
+	const_reverse_iterator crend() const { return const_reverse_iterator{ const_iterator{ 0, *this} }; }
 
 	constexpr bool empty() const
 	{
@@ -248,17 +324,15 @@ public:
 	template <class... Args, class = std::enable_if_t<std::is_constructible_v<T, Args...>>>
 	void emplace_back(Args&&... args)
 	{
-		T* place;
 		if (size() == capacity()) {
 			grow();
-			place = &array[_size].value;
+			std::construct_at(&array[_size].value, std::forward<Args>(args)...);
+			++_size;
 		}
 		else
 		{
-			place = &(*this)[_size];
+			emplace_back_no_grow(std::forward<Args>(args)...);
 		}
-		std::construct_at(place, std::forward<Args>(args)...);
-		++_size;
 	}
 
 	void push_back(const T& value)
@@ -274,21 +348,16 @@ public:
 	template <class... Args, class = std::enable_if_t<std::is_constructible_v<T, Args...>>>
 	void emplace_front(Args&&... args)
 	{
-		T* place;
 		if (size() == capacity()) {
 			grow();
-			start = capacity(); // wrap around
-			place = &array[start-1].value;
+			std::construct_at(&array[capacity() - 1].value, std::forward<Args>(args)...); // wrap around
+			start = capacity() - 1;
+			++_size;
 		}
 		else
 		{
-			if (start == 0)
-				start = capacity();
-			place = &array[start-1].value;
+			emplace_front_no_grow(std::forward<Args>(args)...);
 		}
-		std::construct_at(place, std::forward<Args>(args)...);
-		--start;
-		++_size;
 	}
 
 	void push_front(const T& value)
@@ -386,11 +455,192 @@ public:
 		}
 	}
 
-
 	template <class V>
 	void erase(iter_templ<V> pos)
 	{
 		erase(pos, pos + 1);
+	}
+
+
+	template <class V, class Iter>
+	iterator insert(iter_templ<V> where, Iter first, Iter last)
+	{
+		if (first == last)
+			return where;
+		size_t n = std::distance(first, last);
+		if (n + size() > capacity())
+		{
+			vector_queue<T> tmp;
+			tmp.reserve(std::max(n + size(), next_capacity()));
+			tmp.start = where - begin();
+			auto first_inserted = tmp.start;
+
+			// insert the new range first in case of an exception
+			for (auto it = first; it != last; ++it)
+			{
+				std::construct_at(&tmp.array[tmp.start + tmp._size].value, *it);
+				++tmp._size;
+			}
+
+			// move the last part from the current vector_queue
+			for (auto it = where; it != end(); ++it)
+			{
+				std::construct_at(&tmp.array[tmp.start + tmp._size].value, std::move(*it));
+				++tmp._size;
+			}
+
+			for (auto it = std::reverse_iterator<iterator>(where); it != rend(); ++it)
+			{
+				std::construct_at(&tmp.array[tmp.start - 1].value, std::move(*it));
+				--tmp.start;
+				++tmp._size;
+			}
+
+			swap(tmp);
+			return { first_inserted, *this };
+		}
+		if(size_t(where - begin()) < size() / 2)
+		{
+			if(where == begin())
+			{
+				insert_n_front(n, first);
+				return begin();
+			}
+
+			// insert n empty values
+			for(size_t i = 0; i < n; ++i)
+			{
+				emplace_front_no_grow();
+			}
+			for(auto it = begin()+n; it != where + n;++it)
+			{
+				*(it - n) = std::move(*it);
+			}
+
+			iterator insert_place = { size_t(where - begin()), *this };
+
+			for (size_t i = 0; i < n; ++i)
+			{
+				*(insert_place+i) = *first;
+				++first;
+			}
+			return insert_place;
+		}
+		else
+		{
+			if (where == end())
+			{
+				std::for_each(first, last, [this](auto& value)
+					{
+						emplace_back_no_grow(value);
+					});
+				return end() - n;
+			}
+
+			// insert n empty values
+			for (size_t i = 0; i < n; ++i)
+			{
+				emplace_back_no_grow();
+			}
+			for (auto it = where; it != end()-n; ++it)
+			{
+				*(it + n) = std::move(*it);
+			}
+
+			iterator insert_place = { size_t(where - begin()), *this };			
+
+			for (size_t i = 0; i < n; ++i)
+			{
+				*(insert_place+i) = *first;
+				++first;
+			}
+			return insert_place;
+		}
+	}
+
+	template <class V, class... Args, class = std::enable_if_t<std::is_constructible_v<T, Args...>>>
+	iterator emplace(iter_templ<V> where, Args&&... args)
+	{
+		if (size() == capacity())
+		{
+			vector_queue<T> tmp;
+			tmp.reserve(std::max(initial_capacity, next_capacity()));
+			tmp.start = where - begin();
+			auto first_inserted = tmp.start;
+
+			// construct the value first in case of an exception
+			std::construct_at(&tmp.array[tmp.start + tmp._size].value, std::forward<Args>(args)...);
+			++tmp._size;
+
+			// move the last part from the current vector_queue
+			for (auto it = where; it != end(); ++it)
+			{
+				std::construct_at(&tmp.array[tmp.start + tmp._size].value, std::move(*it));
+				++tmp._size;
+			}
+
+			for (auto it = std::reverse_iterator<iterator>(where); it != rend(); ++it)
+			{
+				std::construct_at(&tmp.array[tmp.start - 1].value, std::move(*it));
+				--tmp.start;
+				++tmp._size;
+			}
+
+			swap(tmp);
+			return { first_inserted, *this };
+		}
+		if (where == begin())
+		{
+			emplace_front_no_grow(std::forward<Args>(args)...);
+			return begin();
+		}
+		if(where == end())
+		{
+			emplace_back_no_grow(std::forward<Args>(args)...);
+			return --end();
+		}
+		if (size_t(where - begin()) < size() / 2)
+		{
+			emplace_front_no_grow(std::move(front()));
+			// the where iterator now points to the place we want to put the new value
+			for(auto it = ++begin(); true;)
+			{
+				*it = std::move(*(it + 1));
+				++it;
+				if(it == where)
+				{
+					*where = T{ std::forward<Args>(args)... };
+					return it;
+				}
+
+			}
+		}
+		else
+		{
+			emplace_back_no_grow(std::move(back()));
+			// the where iterator is unchanged
+			for(auto it = end()-2; true; --it)
+			{
+				*(it + 1) = std::move(*it);
+				if (it == where)
+				{
+					*where = T{ std::forward<Args>(args)... };
+					return it;
+				}
+			}
+		}
+	}
+
+	template <class V>
+	iterator insert(iter_templ<V> where, const T& value)
+	{
+		return emplace(where, value);
+	}
+
+	template <class V>
+	iterator insert(iter_templ<V> where, T&& value)
+	{
+		return emplace(where, std::move(value));
 	}
 
 	void swap(vector_queue<T,Alloc>& other) noexcept(std::allocator_traits<Alloc>::propagate_on_container_swap::value
@@ -438,11 +688,13 @@ private:
 
 	size_t next_capacity() const
 	{
+		if (_capacity == 0)
+			return initial_capacity;
 		auto new_capacity = _capacity + (_capacity >> 1);
-		// round up to nearest 16 bytes
-		if constexpr (sizeof(T) < 16 && 16 / sizeof(T) > 1) {
-			new_capacity = new_capacity + 15 / sizeof(T);
-			new_capacity = new_capacity & ~(16 / sizeof(T) - 1);
+		// round up to nearest smallest_alloc bytes
+		if constexpr (smallest_alloc / sizeof(T) > 1) {
+			new_capacity = new_capacity + (smallest_alloc-1) / sizeof(T);
+			new_capacity = new_capacity & ~(smallest_alloc / sizeof(T) - 1);
 		}
 		return new_capacity;
 	}
@@ -451,8 +703,8 @@ private:
 	{
 		if(capacity() == 0)
 		{
-			array = alloc.allocate(inital_capacity);
-			_capacity = inital_capacity;
+			array = alloc.allocate(initial_capacity);
+			_capacity = initial_capacity;
 		}
 		else
 		{
@@ -460,3 +712,4 @@ private:
 		}
 	}
 };
+

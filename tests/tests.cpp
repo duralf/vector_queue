@@ -64,7 +64,68 @@ TEST_CASE("erase test")
 	REQUIRE(equals(q, { 1,4 }));
 	q.erase(q.begin());
 	REQUIRE(equals(q, { 4 }));
-
-
 	
+}
+
+
+TEST_CASE("insert test")
+{
+	auto init = { 1,2,3,4 };
+	vector_queue<int> q(init);
+	q.insert(q.begin() + 1, init.begin(), init.end());
+	REQUIRE(equals(q, { 1,1,2,3,4,2,3,4 }));
+	q = init;
+	q.insert(q.end(), init.begin(), init.end());
+	REQUIRE(equals(q, { 1,2,3,4,1,2,3,4 }));
+	q = init;
+	q.insert(q.begin(), init.begin(), init.end());
+	REQUIRE(equals(q, { 1,2,3,4,1,2,3,4 }));
+
+	vector_queue<int>::iterator it = q.begin();
+	vector_queue<int>::const_iterator it2 = it;
+	*it = 5;
+	q.clear();
+
+	q.insert(q.end(), init.begin(), init.end());
+	REQUIRE(equals(q, init));
+	q.clear();
+
+	q.insert(q.begin(), init.begin(), init.end());
+	REQUIRE(equals(q, init));
+	REQUIRE(q.capacity() >= 8);
+	q.insert(q.begin(), init.begin(), init.end());
+	REQUIRE(equals(q, { 1,2,3,4,1,2,3,4 }));
+	q.clear();
+	q.insert(q.begin(), init.begin(), init.end());
+	REQUIRE(equals(q, init));
+	q.insert(q.begin() + 1, init.begin(), init.end());
+	REQUIRE(equals(q, { 1,1,2,3,4,2,3,4 }));
+	q.erase(q.begin() + 1, q.begin() + 5);
+	q.insert(q.end(), init.begin(), init.end());
+	REQUIRE(equals(q, { 1,2,3,4,1,2,3,4 }));
+
+	q.erase(q.begin(), q.begin() + 4);
+	q.insert(q.end()-1, init.begin(), init.end());
+	REQUIRE(equals(q, { 1,2,3,1,2,3,4,4 }));
+
+
+}
+
+TEST_CASE("emplace test")
+{
+	auto init = { 1,2,3,4 };
+	vector_queue<int> q(init);
+	q.erase(q.end() - 2);
+	REQUIRE(equals(q, { 1,2,4 }));
+
+	q.emplace(q.end()-1, 3);
+	REQUIRE(equals(q, { 1,2,3,4 }));
+	q.erase(q.begin()+1);
+	q.emplace(q.begin() + 1, 2);
+	REQUIRE(equals(q, { 1,2,3,4 }));
+	q.emplace(q.end() - 1, 3);
+	REQUIRE(equals(q, { 1,2,3,3,4 }));
+	q = {};
+	q.emplace(q.end(), 1);
+	REQUIRE(equals(q, { 1 }));
 }
