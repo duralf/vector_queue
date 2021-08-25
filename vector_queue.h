@@ -248,24 +248,57 @@ public:
 	template <class... Args, class = std::enable_if_t<std::is_constructible_v<T, Args...>>>
 	void emplace_back(Args&&... args)
 	{
-		std::construct_at(alloc_back(), std::forward<Args>(args)...);
+		T* place;
+		if (size() == capacity()) {
+			grow();
+			place = &array[_size].value;
+		}
+		else
+		{
+			place = &(*this)[_size];
+		}
+		std::construct_at(place, std::forward<Args>(args)...);
+		++_size;
 	}
 
 	void push_back(const T& value)
 	{
-		std::construct_at(alloc_back(), value);
+		emplace_back(value);
+	}
+
+	void push_back(T&& value)
+	{
+		emplace_back(std::move(value));
 	}
 
 	template <class... Args, class = std::enable_if_t<std::is_constructible_v<T, Args...>>>
 	void emplace_front(Args&&... args)
 	{
-		std::construct_at(alloc_front(), std::forward<Args>(args)...);
+		T* place;
+		if (size() == capacity()) {
+			grow();
+			start = capacity(); // wrap around
+			place = &array[start-1].value;
+		}
+		else
+		{
+			if (start == 0)
+				start = capacity();
+			place = &array[start-1].value;
+		}
+		std::construct_at(place, std::forward<Args>(args)...);
+		--start;
+		++_size;
 	}
-
 
 	void push_front(const T& value)
 	{
-		std::construct_at(alloc_front(), value);
+		emplace_front(value);
+	}
+
+	void push_front(T&& value)
+	{
+		emplace_front(std::move(value));
 	}
 
 	void clear()
@@ -370,36 +403,6 @@ public:
 		std::swap(alloc, other.alloc);
 	}
 private:
-
-	T* alloc_back()
-	{
-		if (size() == capacity()) {
-			grow();
-			return &array[_size++].value;
-		}
-		else
-		{
-			return &(*this)[_size++];
-		}
-	}
-
-	T* alloc_front()
-	{
-
-		if (size() == capacity()) {
-			grow();
-			start = capacity() - 1; // wrap around
-			++_size;
-			return &array[start].value;
-		}
-		else
-		{
-			if (start == 0)
-				start = capacity();
-			++_size;
-			return &array[--start].value;
-		}
-	}
 
 	void realloc(size_t new_capacity)
 	{
