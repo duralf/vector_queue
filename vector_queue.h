@@ -26,181 +26,13 @@ SOFTWARE.
 #include <memory>
 #include <iterator>
 #include <algorithm>
+#include <bit>
 
 template <class T, class Alloc = std::allocator<T>>
 struct vector_queue
 {
-private:
-	struct dummy_value {};
-	union array_type
-	{
-		T value;
-		dummy_value dummy;
-		array_type() : dummy{} {}
-		~array_type() {}
-	};
-public:
-	using allocator_type = typename std::allocator_traits<Alloc>::template rebind_alloc<array_type>;
-
-private:
-	static constexpr size_t smallest_alloc = sizeof(size_t) * 4; // no point in allocating tiny areas
-	static constexpr size_t initial_capacity = std::max(size_t(4), smallest_alloc / sizeof(T));
-	array_type* array;
-	size_t _size;
-	size_t _capacity;
-	size_t start;
-	[[no_unique_address]] allocator_type alloc;
-
-
-	template <class... Args>
-	void emplace_front_no_grow(Args&&... args)
-	{
-		if (start == 0) {
-			std::construct_at(&array[capacity() - 1].value, std::forward<Args>(args)...); // wrap around
-			start = capacity();
-		}
-		else
-			std::construct_at(&array[start - 1].value, std::forward<Args>(args)...);
-		--start;
-		++_size;
-	}
-
-
-	template <class... Args>
-	void emplace_back_no_grow(Args&&... args)
-	{
-		std::construct_at(&(*this)[_size], std::forward<Args>(args)...);
-		++_size;
-	}
-
-	template <class Iter>
-	void insert_n_front(size_t n, Iter first)
-	{
-		for(size_t i = 0; i < n; ++i)
-		{
-#ifndef VECTOR_QUEUE_NO_EXCEPTIONS
-			try {
-#endif
-				size_t index;
-				if (start + i < n)
-					index = start + capacity() - n + i;
-				else
-					index = start - n + 1;
-				std::construct_at(&array[index].value, *first);
-				++first;
-#ifndef VECTOR_QUEUE_NO_EXCEPTIONS
-			} catch (...)
-			{
-				for (size_t j = 0; j < i; ++j)
-				{
-					size_t index;
-					if (start + j < i)
-						index = start + capacity() - i + j;
-					else
-						index = start - i + 1;
-					std::destroy_at(&array[index].value);
-				}
-				throw;
-			}
-#endif
-		}
-		_size += n;
-		if (start < n)
-			start = capacity() - start - n;
-		else
-			start -= n;
-	}
-
-	template <class V>
-	struct iter_templ
-	{
-		typedef ptrdiff_t difference_type;
-		typedef T value_type;
-		typedef V* pointer;
-		typedef V& reference;
-		typedef std::random_access_iterator_tag iterator_category;
-		using container_type = std::conditional_t<std::is_const_v<V>, const vector_queue<T>, vector_queue<T>>;
-
-		V& operator*() { return (*container)[index]; }
-		V* operator->() { return &(*container)[index]; }
-
-		iter_templ<V>& operator++()
-		{
-			++index;
-			return *this;
-		}
-
-		iter_templ<V> operator++(int)
-		{
-			return {index++, *container};
-		}
-
-		iter_templ<V>& operator--()
-		{
-			--index;
-			return *this;
-		}
-
-		iter_templ<V> operator--(int)
-		{
-			return { index--, *container };
-		}
-
-		bool operator!=(const iter_templ<V>& other) const
-		{
-			return index != other.index;
-		}
-
-		bool operator==(const iter_templ<V>& other) const = default;
-
-		ptrdiff_t operator-(const iter_templ<V>& other) const
-		{
-			return ptrdiff_t(index - other.index);
-		}
-
-		iter_templ<V>& operator+=(ptrdiff_t diff)
-		{
-			index += diff;
-			return *this;
-		}
-
-		iter_templ<V>& operator-=(ptrdiff_t diff)
-		{
-			index -= diff;
-			return *this;
-		}
-
-		iter_templ<V> operator+(ptrdiff_t diff) const
-		{
-			auto tmp = *this;
-			return tmp += diff;
-		}
-
-		iter_templ<V> operator-(ptrdiff_t diff) const
-		{
-			auto tmp = *this;
-			return tmp -= diff;
-		}
-
-		std::strong_ordering operator<=>(const iter_templ& other) const
-		{
-			return index <=> other.index;
-		}
-
-		//template <class = std::enable_if_t<!std::is_const_v<V>>>
-		operator iter_templ<const T>() const
-		{
-			return { index, *container };
-		}
-
-
-		iter_templ(size_t index, container_type& container) : index(index), container(&container) {}
-	private:
-		size_t index;
-		container_type* container;
-	};
-
-public:
+	template <class V> struct iter_templ;
+	using allocator_type = Alloc;
 	using value_type = T;
 	using reference = T&;
 	using const_reference = const T&;
@@ -210,16 +42,16 @@ public:
 	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 	using difference_type = ptrdiff_t;
 
-	constexpr vector_queue() noexcept(noexcept(allocator_type())) : array{}, _size{}, _capacity{}, start{}, alloc{}
+	constexpr vector_queue() noexcept(noexcept(Alloc())) : array{}, _size{}, _capacity{}, start{}, alloc{}
 	{}
-	constexpr explicit vector_queue(const allocator_type& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{alloc}
+	constexpr explicit vector_queue(const Alloc& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{alloc}
 	{}
-	vector_queue(std::initializer_list<T> values, const allocator_type& alloc = allocator_type()) : _size{}, _capacity(values.size()), start{}, alloc(alloc)
+	vector_queue(std::initializer_list<T> values, const Alloc& alloc = Alloc()) : _size{}, _capacity(round_up(values.size())), start{}, alloc(alloc)
 	{
 		array = this->alloc.allocate(values.size());
 		for(auto& val: values)
 		{
-			std::construct_at(&array[_size++].value, val);
+			std::construct_at(&array[_size++], val);
 		}
 	}
 
@@ -235,7 +67,7 @@ public:
 		array = alloc.allocate(capacity());
 		for (auto& val : other)
 		{
-			std::construct_at(&array[_size++].value, val);
+			std::construct_at(&array[_size++], val);
 		}
 	}
 
@@ -243,15 +75,8 @@ public:
 	{
 		if (this == &other)
 			return *this;
-
-		array = other.array;
-		_size = other.size();
-		_capacity = other.capacity();
-		start = other.start;
-		alloc = std::move(other.alloc);
-		other._size = 0;
-		other.array = nullptr;
-		other._capacity = 0;
+		swap(other);
+		other.clear();
 		return *this;
 	}
 
@@ -261,11 +86,15 @@ public:
 			return *this;
 
 		clear();
-		if (capacity() < other.size())
-			realloc(other.size());
+		if (capacity() < other.size()) {
+			alloc.deallocate(array, capacity());
+			_capacity = 0;
+			array = alloc.allocate(other.size());
+			_capacity = other.size();
+		}
 		for (auto& val : other)
 		{
-			std::construct_at(&array[_size++].value, val);
+			std::construct_at(&array[_size++], val);
 		}
 		return *this;
 	}
@@ -306,18 +135,25 @@ public:
 		return (*this)[size() - 1];
 	}
 
+	constexpr size_t wrap_up(size_t index) const
+	{
+		return (start + index) & (capacity() - 1);
+	}
+
+	constexpr size_t wrap_down(size_t index) const
+	{
+		return (start - index) & (capacity() - 1);
+	}
+
+
 	T& operator[](size_t index)
 	{
-		if (start + index < capacity())
-			return array[start + index].value;
-		return array[start + index - capacity()].value;
+		return array[wrap_up(index)];
 	}
 
 	const T& operator[](size_t index) const
 	{
-		if (start + index < capacity())
-			return array[start + index].value;
-		return array[start + index - capacity()].value;
+		return array[wrap_up(index)];
 	}
 
 
@@ -326,7 +162,7 @@ public:
 	{
 		if (size() == capacity()) {
 			grow();
-			std::construct_at(&array[_size].value, std::forward<Args>(args)...);
+			std::construct_at(&array[_size], std::forward<Args>(args)...);
 			++_size;
 		}
 		else
@@ -350,7 +186,7 @@ public:
 	{
 		if (size() == capacity()) {
 			grow();
-			std::construct_at(&array[capacity() - 1].value, std::forward<Args>(args)...); // wrap around
+			std::construct_at(&array[capacity() - 1], std::forward<Args>(args)...); // wrap around
 			start = capacity() - 1;
 			++_size;
 		}
@@ -374,7 +210,7 @@ public:
 	{
 		for_each_index([this](size_t ix)
 			{
-				std::destroy_at(&array[ix].value);
+				std::destroy_at(&array[ix]);
 			});
 		start = 0;
 		_size = 0;
@@ -382,8 +218,9 @@ public:
 
 	void reserve(size_t new_capacity)
 	{
-		if (new_capacity > capacity())
-			realloc(new_capacity);
+		if (new_capacity > capacity()) {
+			realloc(round_up(new_capacity));
+		}
 	}
 
 	void pop_front()
@@ -397,15 +234,10 @@ public:
 
 	void pop_back()
 	{
-		std::destroy_at(&(*this)[_size-1]);
-		--_size;		
+		std::destroy_at(&(*this)[_size - 1]);
+		--_size;
 	}
-
-	void shrink_to_fit()
-	{
-		realloc(_size);
-	}
-
+	
 	constexpr size_t size() const
 	{
 		return _size;
@@ -478,20 +310,20 @@ public:
 			// insert the new range first in case of an exception
 			for (auto it = first; it != last; ++it)
 			{
-				std::construct_at(&tmp.array[tmp.start + tmp._size].value, *it);
+				std::construct_at(&tmp.array[tmp.start + tmp._size], *it);
 				++tmp._size;
 			}
 
 			// move the last part from the current vector_queue
 			for (auto it = where; it != end(); ++it)
 			{
-				std::construct_at(&tmp.array[tmp.start + tmp._size].value, std::move(*it));
+				std::construct_at(&tmp.array[tmp.start + tmp._size], std::move(*it));
 				++tmp._size;
 			}
 
 			for (auto it = std::reverse_iterator<iterator>(where); it != rend(); ++it)
 			{
-				std::construct_at(&tmp.array[tmp.start - 1].value, std::move(*it));
+				std::construct_at(&tmp.array[tmp.start - 1], std::move(*it));
 				--tmp.start;
 				++tmp._size;
 			}
@@ -569,19 +401,19 @@ public:
 			auto first_inserted = tmp.start;
 
 			// construct the value first in case of an exception
-			std::construct_at(&tmp.array[tmp.start + tmp._size].value, std::forward<Args>(args)...);
+			std::construct_at(&tmp.array[tmp.start + tmp._size], std::forward<Args>(args)...);
 			++tmp._size;
 
 			// move the last part from the current vector_queue
 			for (auto it = where; it != end(); ++it)
 			{
-				std::construct_at(&tmp.array[tmp.start + tmp._size].value, std::move(*it));
+				std::construct_at(&tmp.array[tmp.start + tmp._size], std::move(*it));
 				++tmp._size;
 			}
 
 			for (auto it = std::reverse_iterator<iterator>(where); it != rend(); ++it)
 			{
-				std::construct_at(&tmp.array[tmp.start - 1].value, std::move(*it));
+				std::construct_at(&tmp.array[tmp.start - 1], std::move(*it));
 				--tmp.start;
 				++tmp._size;
 			}
@@ -653,6 +485,114 @@ public:
 		std::swap(alloc, other.alloc);
 	}
 private:
+	static constexpr size_t round_up(size_t number)
+	{
+		//round up to nearest power of two
+		constexpr auto bits = sizeof(size_t) * CHAR_BIT;
+		size_t power = bits - std::countl_zero(number) - 1;
+		if ((1ULL << power) != number)
+			return 1ULL << (power + 1);
+		else
+			return number;
+	}
+
+	static constexpr size_t smallest_alloc = sizeof(size_t) * 4; // no point in allocating tiny areas
+	static constexpr size_t initial_capacity = round_up(std::max(size_t(4), smallest_alloc / sizeof(T)));
+	T* array;
+	size_t _size;
+	size_t _capacity;
+	size_t start;
+	[[no_unique_address]] Alloc alloc;
+
+
+	template <class V>
+	struct iter_templ
+	{
+		typedef ptrdiff_t difference_type;
+		typedef T value_type;
+		typedef V* pointer;
+		typedef V& reference;
+		typedef std::random_access_iterator_tag iterator_category;
+		using container_type = std::conditional_t<std::is_const_v<V>, const vector_queue<T>, vector_queue<T>>;
+
+		V& operator*() { return (*container)[index]; }
+		V* operator->() { return &(*container)[index]; }
+
+		iter_templ<V>& operator++()
+		{
+			++index;
+			return *this;
+		}
+
+		iter_templ<V> operator++(int)
+		{
+			return { index++, *container };
+		}
+
+		iter_templ<V>& operator--()
+		{
+			--index;
+			return *this;
+		}
+
+		iter_templ<V> operator--(int)
+		{
+			return { index--, *container };
+		}
+
+		bool operator!=(const iter_templ<V>& other) const
+		{
+			return index != other.index;
+		}
+
+		bool operator==(const iter_templ<V>& other) const = default;
+
+		ptrdiff_t operator-(const iter_templ<V>& other) const
+		{
+			return ptrdiff_t(index - other.index);
+		}
+
+		iter_templ<V>& operator+=(ptrdiff_t diff)
+		{
+			index += diff;
+			return *this;
+		}
+
+		iter_templ<V>& operator-=(ptrdiff_t diff)
+		{
+			index -= diff;
+			return *this;
+		}
+
+		iter_templ<V> operator+(ptrdiff_t diff) const
+		{
+			auto tmp = *this;
+			return tmp += diff;
+		}
+
+		iter_templ<V> operator-(ptrdiff_t diff) const
+		{
+			auto tmp = *this;
+			return tmp -= diff;
+		}
+
+		std::strong_ordering operator<=>(const iter_templ& other) const
+		{
+			return index <=> other.index;
+		}
+
+		//template <class = std::enable_if_t<!std::is_const_v<V>>>
+		operator iter_templ<const T>() const
+		{
+			return { index, *container };
+		}
+
+
+		iter_templ(size_t index, container_type& container) : index(index), container(&container) {}
+	private:
+		size_t index;
+		container_type* container;
+	};
 
 	void realloc(size_t new_capacity)
 	{
@@ -661,8 +601,8 @@ private:
 		tmp._capacity = new_capacity;
 		for_each_index([this, &tmp](size_t ix)
 			{
-				std::construct_at(&tmp.array[tmp._size++].value, std::move(array[ix].value));
-				std::destroy_at(&array[ix].value);
+				std::construct_at(&tmp.array[tmp._size++], std::move(array[ix]));
+				std::destroy_at(&array[ix]);
 			});
 		alloc.deallocate(array, capacity());
 		swap(tmp);
@@ -690,7 +630,7 @@ private:
 	{
 		if (_capacity == 0)
 			return initial_capacity;
-		auto new_capacity = _capacity + (_capacity >> 1);
+		auto new_capacity = _capacity << 1;
 		// round up to nearest smallest_alloc bytes
 		if constexpr (smallest_alloc / sizeof(T) > 1) {
 			new_capacity = new_capacity + (smallest_alloc-1) / sizeof(T);
@@ -701,15 +641,67 @@ private:
 
 	void grow()
 	{
-		if(capacity() == 0)
+		if (capacity() == 0)
 		{
 			array = alloc.allocate(initial_capacity);
 			_capacity = initial_capacity;
 		}
 		else
 		{
-			realloc(next_capacity());
+			realloc(round_up(next_capacity()));
 		}
 	}
+
+	template <class... Args>
+	void emplace_front_no_grow(Args&&... args)
+	{
+		std::construct_at(&array[wrap_down(1)], std::forward<Args>(args)...);
+		start = (start - 1) & (capacity() - 1);
+		++_size;
+	}
+
+
+	template <class... Args>
+	void emplace_back_no_grow(Args&&... args)
+	{
+		std::construct_at(&array[wrap_up(_size)], std::forward<Args>(args)...);
+		++_size;
+	}
+
+	template <class Iter>
+	void insert_n_front(size_t n, Iter first)
+	{
+		for (size_t i = 0; i < n; ++i)
+		{
+#ifndef VECTOR_QUEUE_NO_EXCEPTIONS
+			try {
+#endif
+				size_t index = wrap_down(n - i);
+				std::construct_at(&array[index], *first);
+				++first;
+#ifndef VECTOR_QUEUE_NO_EXCEPTIONS
+			}
+			catch (...)
+			{
+				for (size_t j = 0; j < i; ++j)
+				{
+					size_t index;
+					if (start + j < i)
+						index = start + capacity() - i + j;
+					else
+						index = start - i + 1;
+					std::destroy_at(&array[index]);
+				}
+				throw;
+			}
+#endif
+		}
+		_size += n;
+		if (start < n)
+			start = capacity() - start - n;
+		else
+			start -= n;
+	}
+
 };
 

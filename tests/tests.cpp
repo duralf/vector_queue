@@ -129,3 +129,17 @@ TEST_CASE("emplace test")
 	q.emplace(q.end(), 1);
 	REQUIRE(equals(q, { 1 }));
 }
+
+TEST_CASE("rounding")
+{
+	vector_queue<uint64_t> q;
+	q.reserve(2);
+	REQUIRE(q.capacity() == 2);
+	q.reserve(3);
+	REQUIRE(q.capacity() == 4);
+	q.reserve(8);
+	REQUIRE(q.capacity() == 8);
+	q.reserve(9);
+	REQUIRE(q.capacity() == 16);
+
+}
