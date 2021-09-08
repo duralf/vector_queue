@@ -44,12 +44,12 @@ struct vector_queue
 
 	constexpr vector_queue() noexcept(noexcept(Alloc())) : array{}, _size{}, _capacity{}, start{}, alloc{}
 	{}
-	constexpr explicit vector_queue(const Alloc& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{alloc}
+	constexpr explicit vector_queue(const Alloc& alloc) noexcept : array{}, _size{}, _capacity{}, start{}, alloc{ alloc }
 	{}
 	vector_queue(std::initializer_list<T> values, const Alloc& alloc = Alloc()) : _size{}, _capacity(round_up(values.size())), start{}, alloc(alloc)
 	{
 		array = this->alloc.allocate(values.size());
-		for(auto& val: values)
+		for (auto& val : values)
 		{
 			std::construct_at(&array[_size++], val);
 		}
@@ -256,14 +256,14 @@ struct vector_queue
 			clear();
 			return;
 		}
-		if(end() - last <= ptrdiff_t(size() / 2))
+		if (end() - last <= ptrdiff_t(size() / 2))
 		{
 			while (first + n < end())
 			{
 				*first = std::move(*(first + n));
 				++first;
-			} 
-			while(n > 0)
+			}
+			while (n > 0)
 			{
 				pop_back();
 				--n;
@@ -271,7 +271,7 @@ struct vector_queue
 		}
 		else
 		{
-			if(first != begin())
+			if (first != begin())
 			{
 				do
 				{
@@ -331,20 +331,20 @@ struct vector_queue
 			swap(tmp);
 			return { first_inserted, *this };
 		}
-		if(size_t(where - begin()) < size() / 2)
+		if (size_t(where - begin()) < size() / 2)
 		{
-			if(where == begin())
+			if (where == begin())
 			{
 				insert_n_front(n, first);
 				return begin();
 			}
 
 			// insert n empty values
-			for(size_t i = 0; i < n; ++i)
+			for (size_t i = 0; i < n; ++i)
 			{
 				emplace_front_no_grow();
 			}
-			for(auto it = begin()+n; it != where + n;++it)
+			for (auto it = begin() + n; it != where + n; ++it)
 			{
 				*(it - n) = std::move(*it);
 			}
@@ -353,7 +353,7 @@ struct vector_queue
 
 			for (size_t i = 0; i < n; ++i)
 			{
-				*(insert_place+i) = *first;
+				*(insert_place + i) = *first;
 				++first;
 			}
 			return insert_place;
@@ -374,16 +374,16 @@ struct vector_queue
 			{
 				emplace_back_no_grow();
 			}
-			for (auto it = where; it != end()-n; ++it)
+			for (auto it = where; it != end() - n; ++it)
 			{
 				*(it + n) = std::move(*it);
 			}
 
-			iterator insert_place = { size_t(where - begin()), *this };			
+			iterator insert_place = { size_t(where - begin()), *this };
 
 			for (size_t i = 0; i < n; ++i)
 			{
-				*(insert_place+i) = *first;
+				*(insert_place + i) = *first;
 				++first;
 			}
 			return insert_place;
@@ -426,7 +426,7 @@ struct vector_queue
 			emplace_front_no_grow(std::forward<Args>(args)...);
 			return begin();
 		}
-		if(where == end())
+		if (where == end())
 		{
 			emplace_back_no_grow(std::forward<Args>(args)...);
 			return --end();
@@ -435,11 +435,11 @@ struct vector_queue
 		{
 			emplace_front_no_grow(std::move(front()));
 			// the where iterator now points to the place we want to put the new value
-			for(auto it = ++begin(); true;)
+			for (auto it = ++begin(); true;)
 			{
 				*it = std::move(*(it + 1));
 				++it;
-				if(it == where)
+				if (it == where)
 				{
 					*where = T{ std::forward<Args>(args)... };
 					return it;
@@ -451,7 +451,7 @@ struct vector_queue
 		{
 			emplace_back_no_grow(std::move(back()));
 			// the where iterator is unchanged
-			for(auto it = end()-2; true; --it)
+			for (auto it = end() - 2; true; --it)
 			{
 				*(it + 1) = std::move(*it);
 				if (it == where)
@@ -475,7 +475,7 @@ struct vector_queue
 		return emplace(where, std::move(value));
 	}
 
-	void swap(vector_queue<T,Alloc>& other) noexcept(std::allocator_traits<Alloc>::propagate_on_container_swap::value
+	void swap(vector_queue<T, Alloc>& other) noexcept(std::allocator_traits<Alloc>::propagate_on_container_swap::value
 		|| std::allocator_traits<Alloc>::is_always_equal::value)
 	{
 		std::swap(array, other.array);
