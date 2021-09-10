@@ -27,7 +27,10 @@ SOFTWARE.
 #include <iterator>
 #include <algorithm>
 #include <bit>
-
+#ifdef VECTOR_QUEUE_HAS_SSE
+#include <pmmintrin.h>
+#include <emmintrin.h>
+#endif
 template <class T, class Alloc = std::allocator<T>>
 struct vector_queue
 {
@@ -97,6 +100,51 @@ struct vector_queue
 			std::construct_at(&array[_size++], val);
 		}
 		return *this;
+	}
+
+	iterator find(const T& value)
+	{
+#ifdef VECTOR_QUEUE_HAS_SSE
+		if (sizeof(T) > sizeof(uint32_t) || size() * sizeof(T) < 32 || !std::is_integral_v<T>)
+#endif
+		{
+			if (start + size() > capacity())
+			{
+				for (size_t i = start; i < capacity(); ++i)
+					if (array[i] == value)
+						return { i - start, *this };
+				auto processed = capacity() - start;
+				for (size_t i = 0; i < size() - processed; ++i)
+					if (array[i] == value)
+						return { i + processed, *this };
+				return end();
+			}
+
+			for (size_t i = 0; i < size(); ++i)
+				if (array[i + start] == value)
+					return { i, *this };
+			return end();
+		}
+#ifdef VECTOR_QUEUE_HAS_SSE
+		constexpr size_t stride = 16 / sizeof(T);
+		start = start & (capacity() - 1);
+		size_t aligned = (start + stride) & ~(stride-1);
+		for (size_t i = start; i < aligned; ++i)
+			if (array[i] == value)
+				return { i - start, *this };
+		while (size() - (aligned - start) > stride)
+		{
+			aligned &= (capacity() - 1);
+			auto res = find_value_sse(aligned, (std::make_signed_t<T>)value);
+			if(res)
+			{
+				return { aligned + (std::countr_zero((unsigned)res) / sizeof(T)) - start, *this };
+			}
+			aligned += stride;
+		}
+		iterator it = { aligned - start, *this };
+		return std::find(it, end(), value);
+#endif
 	}
 
 	iterator begin() { return { 0, *this }; }
@@ -702,6 +750,31 @@ private:
 		else
 			start -= n;
 	}
+#ifdef VECTOR_QUEUE_HAS_SSE
+	int find_value_sse(size_t aligned, int8_t value)
+	{
+		auto data = _mm_loadu_si128((__m128i*) & array[aligned]);
+		auto val_x = _mm_setr_epi8(value, value, value, value, value, value, value, value, value, value, value, value, value, value, value, value);
+		auto eq = _mm_cmpeq_epi8(val_x, data);
+		return _mm_movemask_epi8(eq);
+	}
+
+	int find_value_sse(size_t aligned, int16_t value)
+	{
+		auto data = _mm_loadu_si128((__m128i*) & array[aligned]);
+		auto val_x = _mm_setr_epi16(value, value, value, value, value, value, value, value);
+		auto eq = _mm_cmpeq_epi16(val_x, data);
+		return _mm_movemask_epi8(eq);
+	}
+
+	int find_value_sse(size_t aligned, int32_t value)
+	{
+		auto data = _mm_loadu_si128((__m128i*) & array[aligned]);
+		auto val_x = _mm_setr_epi32(value, value, value, value);
+		auto eq = _mm_cmpeq_epi32(val_x, data);
+		return _mm_movemask_epi8(eq);
+	}
+#endif
 
 };
 

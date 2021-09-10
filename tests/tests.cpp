@@ -1,4 +1,5 @@
 #define CATCH_CONFIG_MAIN
+#define VECTOR_QUEUE_HAS_SSE
 #include <catch.hpp>
 #include <vector_queue.h>
 
@@ -142,4 +143,89 @@ TEST_CASE("rounding")
 	q.reserve(9);
 	REQUIRE(q.capacity() == 16);
 
+}
+
+TEST_CASE("find small queue")
+{
+	auto init = std::initializer_list<uint8_t>{ 1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4 };
+	vector_queue<uint8_t> q{init};
+	q.pop_front();
+	q.emplace_back(5);
+	REQUIRE(q.capacity() == q.size());
+	auto it = q.find(5);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 5);
+	q.erase(q.begin(), q.begin() + 8);
+	it = q.find(5);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 5);
+	
+}
+
+TEST_CASE("find big queue")
+{
+	auto init = std::initializer_list<uint8_t>{ 1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4 };
+	vector_queue<uint8_t> q{ init };
+	q.pop_front();
+	q.emplace_back(5);
+	REQUIRE(q.capacity() == q.size());
+	auto it = q.find(5);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 5);
+	q[18] = 8;
+	it = q.find(8);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 8);
+	REQUIRE(it - q.begin() == 18);
+	*it = 0;
+	q.erase(q.begin(), q.begin() + 8);
+	it = q.find(5);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 5);
+	q[18] = 8;
+	it = q.find(8);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 8);
+	REQUIRE(it - q.begin() == 18);
+}
+
+
+TEST_CASE("find big element SSE")
+{
+	auto init = std::initializer_list<uint16_t>{ 1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4 };
+	vector_queue<uint16_t> q{ init };
+	q.pop_front();
+	q.emplace_back(5);
+	REQUIRE(q.capacity() == q.size());
+	auto it = q.find(5);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 5);
+	it = q.find(5);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 5);
+	q[10] = 8;
+	it = q.find(8);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 8);
+	REQUIRE(it - q.begin() == 10);
+}
+
+TEST_CASE("find bigger element SSE")
+{
+	auto init = std::initializer_list<uint32_t>{ 1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4 };
+	vector_queue<uint32_t> q{ init };
+	q.pop_front();
+	q.emplace_back(5);
+	REQUIRE(q.capacity() == q.size());
+	auto it = q.find(5);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 5);
+	it = q.find(5);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 5);
+	q[10] = 8;
+	it = q.find(8);
+	REQUIRE(it != q.end());
+	REQUIRE(*it == 8);
+	REQUIRE(it - q.begin() == 10);
 }
