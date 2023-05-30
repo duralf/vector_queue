@@ -83,7 +83,6 @@ TEST_CASE("insert test")
 	REQUIRE(equals(q, { 1,2,3,4,1,2,3,4 }));
 
 	vector_queue<int>::iterator it = q.begin();
-	vector_queue<int>::const_iterator it2 = it;
 	*it = 5;
 	q.clear();
 
@@ -109,6 +108,30 @@ TEST_CASE("insert test")
 	q.insert(q.end()-1, init.begin(), init.end());
 	REQUIRE(equals(q, { 1,2,3,1,2,3,4,4 }));
 
+
+}
+
+TEST_CASE("pop/insert test")
+{
+	auto init = { 1,2,3,4 };
+	vector_queue<int> q(init);
+	q.insert(++q.begin(), 5);
+	q.pop_front();
+	REQUIRE(equals(q, { 5,2,3,4 }));
+	for(int i = 0; i < 4; ++i)
+	{
+		q.insert(q.begin() + i, i + 6);
+	}
+	REQUIRE(equals(q, { 6,7,8,9,5,2,3,4 }));
+
+	for (int i = 0; i < 4; ++i)
+		q.pop_front();
+
+	for (int i = 0; i < 4; ++i)
+	{
+		q.insert(q.end() - i, i + 6);
+	}
+	REQUIRE(equals(q, { 5,2,3,4,9,8,7,6 }));
 
 }
 

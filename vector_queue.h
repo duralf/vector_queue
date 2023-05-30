@@ -299,7 +299,7 @@ struct vector_queue
 	template <class V>
 	void erase(iter_templ<V> first, iter_templ<V> last)
 	{
-		auto n = last - first;
+		size_t n = last - first;
 		if (n == size()) {
 			clear();
 			return;
@@ -483,16 +483,14 @@ struct vector_queue
 		{
 			emplace_front_no_grow(std::move(front()));
 			// the where iterator now points to the place we want to put the new value
-			for (auto it = ++begin(); true;)
+			for (auto it = ++begin(); true; ++it)
 			{
 				*it = std::move(*(it + 1));
-				++it;
 				if (it == where)
 				{
 					*where = T{ std::forward<Args>(args)... };
 					return it;
 				}
-
 			}
 		}
 		else
@@ -532,26 +530,6 @@ struct vector_queue
 		std::swap(_size, other._size);
 		std::swap(alloc, other.alloc);
 	}
-private:
-	static constexpr size_t round_up(size_t number)
-	{
-		//round up to nearest power of two
-		constexpr auto bits = sizeof(size_t) * CHAR_BIT;
-		size_t power = bits - std::countl_zero(number) - 1;
-		if ((1ULL << power) != number)
-			return 1ULL << (power + 1);
-		else
-			return number;
-	}
-
-	static constexpr size_t smallest_alloc = sizeof(size_t) * 4; // no point in allocating tiny areas
-	static constexpr size_t initial_capacity = round_up(std::max(size_t(4), smallest_alloc / sizeof(T)));
-	T* array;
-	size_t _size;
-	size_t _capacity;
-	size_t start;
-	[[no_unique_address]] Alloc alloc;
-
 
 	template <class V>
 	struct iter_templ
@@ -642,6 +620,27 @@ private:
 		container_type* container;
 	};
 
+private:
+	static constexpr size_t round_up(size_t number)
+	{
+		//round up to nearest power of two
+		constexpr auto bits = sizeof(size_t) * CHAR_BIT;
+		size_t power = bits - std::countl_zero(number) - 1;
+		if ((1ULL << power) != number)
+			return 1ULL << (power + 1);
+		else
+			return number;
+	}
+
+	static constexpr size_t smallest_alloc = sizeof(size_t) * 4; // no point in allocating tiny areas
+	static constexpr size_t initial_capacity = round_up(std::max(size_t(4), smallest_alloc / sizeof(T)));
+	T* array;
+	size_t _size;
+	size_t _capacity;
+	size_t start;
+	[[no_unique_address]] Alloc alloc;
+	
+	
 	void realloc(size_t new_capacity)
 	{
 		auto tmp = vector_queue<T, Alloc>{};
