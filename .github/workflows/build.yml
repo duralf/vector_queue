@@ -21,3 +21,17 @@ jobs:
         g++ -std=c++20 -Wall -Wextra -pedantic -Werror tests/tests.cpp -I tests -I. -o tests/tests
     - name: Run tests
       run: ./tests/tests
+
+  tests_sse:
+    runs-on: [ubuntu-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Clone Repo
+      uses: actions/checkout@v3
+    - name: Build tests
+      run: |
+        g++ -std=c++20 -DVECTOR_QUEUE_HAS_SSE -Wall -Wextra -pedantic -Werror tests/tests.cpp -I tests -I. -o tests/tests
+    - name: Run tests
+      run: ./tests/tests
