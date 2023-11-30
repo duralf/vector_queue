@@ -1,5 +1,5 @@
 #define CATCH_CONFIG_MAIN
-#define VECTOR_QUEUE_HAS_SSE
+//#define VECTOR_QUEUE_HAS_SSE
 #include <catch.hpp>
 #include <vector_queue.h>
 
@@ -107,8 +107,6 @@ TEST_CASE("insert test")
 	q.erase(q.begin(), q.begin() + 4);
 	q.insert(q.end()-1, init.begin(), init.end());
 	REQUIRE(equals(q, { 1,2,3,1,2,3,4,4 }));
-
-
 }
 
 TEST_CASE("pop/insert test")
@@ -251,4 +249,20 @@ TEST_CASE("find bigger element SSE")
 	REQUIRE(it != q.end());
 	REQUIRE(*it == 8);
 	REQUIRE(it - q.begin() == 10);
+}
+
+
+TEST_CASE("insert front/back")
+{
+	vector_queue<int> q;
+	q.push_front(1);
+	q.push_back(4);
+	q.insert(q.begin() + 1, 2);
+	q.insert(q.begin() + 2, 3);
+	REQUIRE(equals(q, { 1,2,3,4 }));
+	q.push_back(8);
+	q.insert(q.end() - 1, 7);
+	q.insert(q.end() - 2, 6);
+	q.insert(q.end() - 3, 5);
+	REQUIRE(equals(q, { 1,2,3,4,5,6,7,8 }));
 }

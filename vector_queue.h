@@ -65,7 +65,7 @@ struct vector_queue
 		other._capacity = 0;
 	}
 
-	vector_queue(const vector_queue<T>& other) : _capacity(other._size), _size{}, start{}, alloc(other.alloc)
+	vector_queue(const vector_queue<T>& other) : _size{}, _capacity(other._size), start{}, alloc(other.alloc)
 	{
 		array = alloc.allocate(capacity());
 		for (auto& val : other)
@@ -485,12 +485,12 @@ struct vector_queue
 			// the where iterator now points to the place we want to put the new value
 			for (auto it = ++begin(); true; ++it)
 			{
-				*it = std::move(*(it + 1));
 				if (it == where)
 				{
 					*where = T{ std::forward<Args>(args)... };
 					return it;
 				}
+				*it = std::move(*(it + 1));
 			}
 		}
 		else
@@ -499,12 +499,12 @@ struct vector_queue
 			// the where iterator is unchanged
 			for (auto it = end() - 2; true; --it)
 			{
-				*(it + 1) = std::move(*it);
 				if (it == where)
 				{
 					*where = T{ std::forward<Args>(args)... };
 					return it;
 				}
+				*it = std::move(*(it - 1));
 			}
 		}
 	}
@@ -632,7 +632,7 @@ private:
 			return number;
 	}
 
-	static constexpr size_t smallest_alloc = sizeof(size_t) * 4; // no point in allocating tiny areas
+	static constexpr size_t smallest_alloc = sizeof(int) * 4; // no point in allocating tiny areas
 	static constexpr size_t initial_capacity = round_up(std::max(size_t(4), smallest_alloc / sizeof(T)));
 	T* array;
 	size_t _size;
